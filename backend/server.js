@@ -144,6 +144,22 @@ async function getCachedData() {
   }
 }
 
+// Головний маршрут
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Account Health Rating Backend API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      'GET /': 'API information',
+      'GET /api/sheet-data': 'Get sheet data',
+      'POST /api/refresh-cache': 'Refresh data cache',
+      'GET /api/status': 'Server status'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // API маршрути
 app.get('/api/sheet-data', async (req, res) => {
   try {
@@ -184,6 +200,19 @@ app.get('/api/status', (req, res) => {
       spreadsheetId: SPREADSHEET_ID,
       businesses: Object.keys(SHEET_GIDS)
     }
+  });
+});
+
+// Обробка 404 помилок
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Route not found',
+    availableRoutes: [
+      'GET /',
+      'GET /api/sheet-data',
+      'POST /api/refresh-cache',
+      'GET /api/status'
+    ]
   });
 });
 

@@ -1,0 +1,164 @@
+/* src/index.css */
+
+/* Reset та базові стилі */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  /* Основні стилі для body */
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 
+                 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #f8f9fa;
+    color: #333;
+    line-height: 1.6;
+  }
+  
+  /* Code блоки */
+  code {
+    font-family: 'Fira Code', 'Monaco', 'Consolas', 'Ubuntu Mono', monospace;
+    background-color: #f1f1f1;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+  
+  /* Контейнер додатка */
+  #root {
+    min-height: 100vh;
+  }
+  
+  /* Глобальні утиліти */
+  .text-center { text-align: center; }
+  .text-left { text-align: left; }
+  .text-right { text-align: right; }
+  
+  .mb-1 { margin-bottom: 0.25rem; }
+  .mb-2 { margin-bottom: 0.5rem; }
+  .mb-3 { margin-bottom: 1rem; }
+  .mb-4 { margin-bottom: 1.5rem; }
+  .mb-5 { margin-bottom: 2rem; }
+  
+  .mt-1 { margin-top: 0.25rem; }
+  .mt-2 { margin-top: 0.5rem; }
+  .mt-3 { margin-top: 1rem; }
+  .mt-4 { margin-top: 1.5rem; }
+  .mt-5 { margin-top: 2rem; }
+  
+  /* Стилі для скролбара (WebKit) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+  
+  /* Адаптивність для мобільних пристроїв */
+  @media (max-width: 768px) {
+    body {
+      font-size: 14px;
+    }
+    
+    /* Менші відступи на мобільних */
+    .mb-3 { margin-bottom: 0.75rem; }
+    .mb-4 { margin-bottom: 1rem; }
+    .mb-5 { margin-bottom: 1.25rem; }
+  }
+  
+  /* Стилі для focus accessibility */
+  button:focus,
+  select:focus,
+  input:focus {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+  }
+  
+  /* Анімації */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  .fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  
+  /* Стилі для принтування */
+  @media print {
+    body {
+      background: white !important;
+      color: black !important;
+    }
+    
+    /* Приховуємо інтерактивні елементи при друку */
+    button, select, input {
+      display: none !important;
+    }
+  }
+  
+  /* Кастомні властивості (CSS variables) для теми */
+  :root {
+    --primary-color: #2c3e50;
+    --secondary-color: #34495e;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+    
+    --border-radius: 8px;
+    --box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    --transition: all 0.3s ease;
+  }
+  
+  /* Стилі для accessibility - screen readers */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  
+  /* Висока контрастність для accessibility */
+  @media (prefers-contrast: high) {
+    body {
+      background-color: white;
+      color: black;
+    }
+    
+    button, select, input {
+      border: 2px solid black;
+    }
+  }
+  
+  /* Зменшена анімація для accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }

@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Резервні дані з усіма бізнесами
+// Конфігурація API з fallback
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://account-health-rating-app.onrender.com';
+
+console.log('API_BASE_URL:', API_BASE_URL);
+console.log('Environment variables:', {
+  VITE_BACKEND_URL: import.meta.env.VITE_BACKEND_URL,
+  VITE_API_URL: import.meta.env.VITE_API_URL
+});
+
 // Резервні дані з усіма бізнесами
 const mockData = [
   ['Business', 'Country', '6.8.2025', '7.8.2025', '8.8.2025', '11.8.2025', '12.8.2025', '13.8.2025', '14.8.2025', '15.8.2025', '18.8.2025', '19.8.2025', '20.8.2025', '21.8.2025', '22.8.2025', '25.8.2025'],
@@ -35,6 +43,30 @@ const mockData = [
   ['Wixez', 'France', 230, 230, 235, 235, 240, 240, 245, 245, 250, 250, 255, 255, 260, 265]
 ];
 
+// Функція для безпечного fetch з timeout
+async function safeFetch(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 секунд timeout
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...options.headers
+      }
+    });
+    
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
 export default function App() {
   const [allData, setAllData] = useState([]);
   const [selectedBusiness, setSelectedBusiness] = useState('');
@@ -43,6 +75,28 @@ export default function App() {
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [visibleCountries, setVisibleCountries] = useState(new Set());
+  const [connectionStatus, setConnectionStatus] = useState('checking');
+
+  // Функція для тестування підключення
+  const testConnection = async () => {
+    try {
+      console.log('Тестування підключення до бекенду...');
+      const response = await safeFetch(`${API_BASE_URL}/api/status`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Підключення до бекенду успішне:', data);
+        setConnectionStatus('connected');
+        return true;
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error('❌ Помилка підключення до бекенду:', error.message);
+      setConnectionStatus('disconnected');
+      return false;
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -50,56 +104,59 @@ export default function App() {
         setLoading(true);
         setError(null);
         
-        console.log('Завантаження даних...');
+        console.log('Початок завантаження даних...');
+        console.log('Використовуємо API URL:', API_BASE_URL);
         
-        // Спочатку пробуємо backend API
-        try {
-          const response = await fetch('/api/sheet-data', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
+        // Спочатку тестуємо підключення
+        const isConnected = await testConnection();
+        
+        if (!isConnected) {
+          throw new Error('Бекенд недоступний - використовуються демонстраційні дані');
+        }
+        
+        // Тепер пробуємо завантажити дані
+        const apiUrl = `${API_BASE_URL}/api/sheet-data`;
+        console.log('Завантаження з:', apiUrl);
+        
+        const response = await safeFetch(apiUrl);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Отримана відповідь:', result);
+        
+        if (result.success && Array.isArray(result.data) && result.data.length > 1) {
+          console.log('✅ Дані успішно завантажені з backend API');
+          console.log('Кількість рядків:', result.data.length);
           
-          if (response.ok) {
-            const result = await response.json();
-            
-            if (result.success && Array.isArray(result.data) && result.data.length > 1) {
-              console.log('Дані успішно завантажені з backend API');
-              console.log('Кількість рядків:', result.data.length);
-              
-              // Перевіряємо чи є всі бізнеси
-              const businesses = [...new Set(result.data.slice(1).map(row => row[0]))];
-              console.log('Знайдені бізнеси:', businesses);
-              
-              setAllData(result.data);
-              setLastUpdate(result.meta?.lastUpdate);
-              
-              if (result.meta?.fromCache) {
-                console.log('Дані з кешу');
-              }
-              if (result.meta?.error) {
-                setError(`Попередження: ${result.meta.error} (використовуються кешовані дані)`);
-              }
-              return;
-            }
+          const businesses = [...new Set(result.data.slice(1).map(row => row[0]))];
+          console.log('Знайдені бізнеси:', businesses);
+          
+          setAllData(result.data);
+          setLastUpdate(result.meta?.lastUpdate);
+          setConnectionStatus('connected');
+          
+          if (result.meta?.fromCache) {
+            console.log('ℹ️ Дані з кешу');
           }
-          
-          throw new Error(`Backend API помилка: ${response.status}`);
-          
-        } catch (backendError) {
-          console.log('Backend API недоступний:', backendError.message);
-          
-          // Використовуємо резервні дані
-          console.log('Використання резервних даних');
-          setAllData(mockData);
-          setError('Backend API недоступний, використовуються демонстраційні дані');
+          if (result.meta?.error) {
+            setError(`Попередження: ${result.meta.error}`);
+          }
+        } else {
+          throw new Error('Невалідні дані від API');
         }
         
       } catch (error) {
-        console.error('Помилка завантаження даних:', error);
-        setError(`Помилка завантаження: ${error.message}`);
+        console.error('❌ Помилка завантаження:', error.message);
+        
+        // Використовуємо резервні дані
+        console.log('Використання резервних даних');
         setAllData(mockData);
+        setConnectionStatus('disconnected');
+        setError(`Backend API недоступний (${error.message}), використовуються демонстраційні дані`);
+        
       } finally {
         setLoading(false);
       }
@@ -112,7 +169,7 @@ export default function App() {
     const businessName = e.target.value;
     setSelectedBusiness(businessName);
     setSelectedCountry('');
-    setVisibleCountries(new Set()); // Скидаємо видимі країни при зміні бізнесу
+    setVisibleCountries(new Set());
   };
 
   const handleCountryChange = (e) => {
@@ -134,7 +191,6 @@ export default function App() {
 
   // Функція для отримання останнього рейтингу
   const getLatestRating = (row) => {
-    // Шукаємо останнє числове значення в рядку (пропускаємо Business та Country)
     for (let i = row.length - 1; i >= 2; i--) {
       const value = Number(row[i]);
       if (!isNaN(value) && value > 0) {
@@ -196,10 +252,8 @@ export default function App() {
   const refreshCache = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/refresh-cache', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const apiUrl = `${API_BASE_URL}/api/refresh-cache`;
+      const response = await safeFetch(apiUrl, { method: 'POST' });
       
       if (response.ok) {
         const result = await response.json();
@@ -207,13 +261,16 @@ export default function App() {
           setAllData(result.data);
           setLastUpdate(result.meta?.lastUpdate);
           setError(null);
+          setConnectionStatus('connected');
+          console.log('✅ Кеш успішно оновлено');
         }
       } else {
-        throw new Error('Не вдалося оновити кеш');
+        throw new Error(`HTTP ${response.status}`);
       }
     } catch (err) {
-      console.error('Помилка оновлення:', err);
-      setError('Не вдалося оновити дані');
+      console.error('❌ Помилка оновлення:', err);
+      setError(`Не вдалося оновити дані: ${err.message}`);
+      setConnectionStatus('disconnected');
     } finally {
       setLoading(false);
     }
@@ -231,6 +288,14 @@ export default function App() {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '18px', marginBottom: '10px' }}>Завантаження даних...</div>
           <div style={{ color: '#666' }}>Зачекайте, поки завантажуються останні дані</div>
+          <div style={{ 
+            color: connectionStatus === 'connected' ? '#28a745' : connectionStatus === 'disconnected' ? '#dc3545' : '#6c757d', 
+            fontSize: '12px', 
+            marginTop: '10px' 
+          }}>
+            Статус: {connectionStatus === 'connected' ? 'Підключено' : connectionStatus === 'disconnected' ? 'Відключено' : 'Перевірка...'}
+          </div>
+          <div style={{ color: '#999', fontSize: '12px', marginTop: '5px' }}>API: {API_BASE_URL}</div>
         </div>
       </div>
     );
@@ -267,22 +332,47 @@ export default function App() {
       <header style={{ textAlign: 'center', marginBottom: '30px' }}>
         <h1 style={{ color: '#2c3e50', marginBottom: '10px' }}>Account Health Rating Dashboard</h1>
         
+        {/* Connection Status */}
+        <div style={{ 
+          display: 'inline-flex', 
+          alignItems: 'center', 
+          padding: '8px 16px',
+          borderRadius: '20px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          backgroundColor: connectionStatus === 'connected' ? '#d4edda' : '#f8d7da',
+          color: connectionStatus === 'connected' ? '#155724' : '#721c24',
+          marginBottom: '15px'
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: connectionStatus === 'connected' ? '#28a745' : '#dc3545',
+            marginRight: '8px'
+          }}></div>
+          {connectionStatus === 'connected' ? 'Backend підключено' : 'Backend відключено'}
+        </div>
+        
         <div style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
-          Джерело даних: Backend API з кешуванням {lastUpdate && `(останнє оновлення: ${new Date(lastUpdate).toLocaleString('uk-UA')})`}
+          Джерело даних: {connectionStatus === 'connected' ? 'Backend API з кешуванням' : 'Демонстраційні дані'}
+          {lastUpdate && ` (останнє оновлення: ${new Date(lastUpdate).toLocaleString('uk-UA')})`}
+          <br />
+          <small style={{ color: '#999' }}>API: {API_BASE_URL}</small>
         </div>
         
         {/* Кнопки управління */}
         <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={refreshCache}
-            disabled={loading}
+            disabled={loading || connectionStatus !== 'connected'}
             style={{
-              backgroundColor: loading ? '#ccc' : '#007bff',
+              backgroundColor: loading || connectionStatus !== 'connected' ? '#ccc' : '#007bff',
               color: 'white',
               border: 'none',
               padding: '10px 20px',
               borderRadius: '5px',
-              cursor: loading ? 'not-allowed' : 'pointer',
+              cursor: loading || connectionStatus !== 'connected' ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: 'bold'
             }}
@@ -292,17 +382,38 @@ export default function App() {
           
           <button
             onClick={async () => {
+              if (connectionStatus !== 'connected') {
+                alert('Backend недоступний. Неможливо отримати статус кешу.');
+                return;
+              }
+              
               try {
-                const response = await fetch('/api/status');
+                const response = await safeFetch(`${API_BASE_URL}/api/status`);
                 const status = await response.json();
                 const cacheAge = status.cache.cacheAge ? Math.round(status.cache.cacheAge / 1000 / 60) : 0;
-                alert(`Статус кешу:\nЄ дані: ${status.cache.hasData ? 'Так' : 'Ні'}\nОстаннє оновлення: ${status.cache.lastUpdate ? new Date(status.cache.lastUpdate).toLocaleString('uk-UA') : 'Немає'}\nВік кешу: ${cacheAge} хв\nНаступне оновлення: ${status.cache.nextUpdate ? new Date(status.cache.nextUpdate).toLocaleString('uk-UA') : 'Немає'}`);
+                alert(`Статус кешу:\nЄ дані: ${status.cache.hasData ? 'Так' : 'Ні'}\nОстаннє оновлення: ${status.cache.lastUpdate ? new Date(status.cache.lastUpdate).toLocaleString('uk-UA') : 'Немає'}\nВік кешу: ${cacheAge} хв\nКількість записів: ${status.cache.recordCount || 0}`);
               } catch (err) {
-                alert('Не вдалося отримати статус');
+                alert(`Не вдалося отримати статус: ${err.message}`);
               }
             }}
+            disabled={connectionStatus !== 'connected'}
             style={{
-              backgroundColor: '#6c757d',
+              backgroundColor: connectionStatus !== 'connected' ? '#ccc' : '#6c757d',
+              color: 'white',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '5px',
+              cursor: connectionStatus !== 'connected' ? 'not-allowed' : 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Статус кешу
+          </button>
+          
+          <button
+            onClick={testConnection}
+            style={{
+              backgroundColor: '#17a2b8',
               color: 'white',
               border: 'none',
               padding: '10px 20px',
@@ -311,7 +422,7 @@ export default function App() {
               fontSize: '14px'
             }}
           >
-            Статус кешу
+            Тест з'єднання
           </button>
         </div>
         
@@ -370,6 +481,23 @@ export default function App() {
         }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#495057' }}>Ризикових рейтингів</h3>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: riskCount > 0 ? '#dc3545' : '#28a745' }}>{riskCount}</div>
+        </div>
+        
+        <div style={{
+          backgroundColor: '#f8f9fa',
+          padding: '20px',
+          borderRadius: '8px',
+          textAlign: 'center',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#495057' }}>Статус підключення</h3>
+          <div style={{ 
+            fontSize: '16px', 
+            fontWeight: 'bold', 
+            color: connectionStatus === 'connected' ? '#28a745' : '#dc3545'
+          }}>
+            {connectionStatus === 'connected' ? '✅ Підключено' : '❌ Відключено'}
+          </div>
         </div>
       </section>
 

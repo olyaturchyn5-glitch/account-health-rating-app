@@ -8,9 +8,38 @@ let cachedData = null;
 let lastFetchTime = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 хвилин
 
+// CORS конфігурація - ГОЛОВНЕ ВИПРАВЛЕННЯ
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:4173',
+    /^https:\/\/.*\.vercel\.app$/, // Всі Vercel домени
+    /^https:\/\/.*\.netlify\.app$/ // Якщо використовуєте Netlify
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: false
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Додаємо додаткові CORS заголовки для надійності
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  
+  // Обробка preflight OPTIONS запитів
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
 
 // Конфігурація Google Sheets
 const SPREADSHEET_ID = '1P5boeXBMpAaujGRrZZtXaokwRyqPU1abr422dcA1z1o';
@@ -24,23 +53,30 @@ const SHEET_GIDS = {
 
 // Резервні дані (без Wixez TR та Seller Tower TR)
 const fallbackData = [
-  ['Business', 'Country', '6.8.2025', '7.8.2025', '8.8.2025', '11.8.2025', '12.8.2025', '13.8.2025', '14.8.2025', '15.8.2025', '18.8.2025', '19.8.2025', '20.8.2025', '21.8.2025', '22.8.2025'],
+  ['Business', 'Country', '6.8.2025', '7.8.2025', '8.8.2025', '11.8.2025', '12.8.2025', '13.8.2025', '14.8.2025', '15.8.2025', '18.8.2025', '19.8.2025', '20.8.2025', '21.8.2025', '22.8.2025', '25.8.2025'],
 
-  ['Bixme', 'United Kingdom', 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 356],
-  ['Bixme', 'Germany', 424, 424, 424, 424, 424, 424, 424, 424, 428, 426, 426, 428, 428],
-  ['Bixme', 'France', 268, 268, 268, 268, 268, 268, 268, 268, 268, 276, 276, 276, 276],
+  ['Bixme', 'United Kingdom', 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 356, 360],
+  ['Bixme', 'Germany', 424, 424, 424, 424, 424, 424, 424, 424, 428, 426, 426, 428, 428, 430],
+  ['Bixme', 'France', 268, 268, 268, 268, 268, 268, 268, 268, 268, 276, 276, 276, 276, 280],
+  ['Bixme', 'Spain', 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 260],
+  ['Bixme', 'Italy', 272, 272, 272, 272, 268, 268, 268, 268, 268, 268, 268, 268, 268, 270],
 
-  ['Dinan', 'United Kingdom', 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 220],
-  ['Dinan', 'Germany', 248, 248, 248, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256],
+  ['Dinan', 'United Kingdom', 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 220, 225],
+  ['Dinan', 'Germany', 248, 248, 248, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 260],
+  ['Dinan', 'France', 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 210],
+  ['Dinan', 'Spain', 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 212, 215],
 
-  ['Monatik', 'United Kingdom', 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200],
-  ['Monatik', 'Germany', 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 216],
+  ['Monatik', 'United Kingdom', 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 205],
+  ['Monatik', 'Germany', 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 216, 220],
+  ['Monatik', 'France', 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 208, 210],
 
-  ['Seller Tower', 'United Kingdom', 180, 180, 180, 185, 185, 185, 185, 185, 190, 190, 190, 195, 195],
-  ['Seller Tower', 'Germany', 195, 195, 200, 200, 200, 205, 205, 205, 210, 210, 210, 215, 215],
+  ['Seller Tower', 'United Kingdom', 180, 180, 180, 185, 185, 185, 185, 185, 190, 190, 190, 195, 195, 200],
+  ['Seller Tower', 'Germany', 195, 195, 200, 200, 200, 205, 205, 205, 210, 210, 210, 215, 215, 220],
+  ['Seller Tower', 'France', 175, 175, 175, 180, 180, 180, 185, 185, 185, 190, 190, 190, 195, 195],
 
-  ['Wixez', 'United Kingdom', 240, 240, 245, 245, 250, 250, 255, 255, 260, 260, 265, 265, 270],
-  ['Wixez', 'Germany', 280, 280, 285, 285, 290, 290, 295, 295, 300, 300, 305, 305, 310]
+  ['Wixez', 'United Kingdom', 240, 240, 245, 245, 250, 250, 255, 255, 260, 260, 265, 265, 270, 275],
+  ['Wixez', 'Germany', 280, 280, 285, 285, 290, 290, 295, 295, 300, 300, 305, 305, 310, 315],
+  ['Wixez', 'France', 230, 230, 235, 235, 240, 240, 245, 245, 250, 250, 255, 255, 260, 265]
 ];
 
 // Функція для парсингу CSV
@@ -104,8 +140,19 @@ async function getCachedData() {
         if (!gid) continue;
 
         const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
-        const response = await fetch(csvUrl);
-        if (!response.ok) continue;
+        
+        // Додаємо timeout та proper headers
+        const response = await fetch(csvUrl, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Account Health Rating API/1.0'
+          }
+        });
+        
+        if (!response.ok) {
+          console.log(`HTTP помилка для ${businessName}: ${response.status}`);
+          continue;
+        }
 
         const csvText = await response.text();
         const parsedData = parseCSV(csvText);
@@ -135,11 +182,16 @@ async function getCachedData() {
 
     cachedData = allData;
     lastFetchTime = now;
+    console.log(`Дані оновлено успішно. Записів: ${allData.length - 1}`);
     return { data: cachedData, fromCache: false };
 
   } catch (error) {
     console.error('Помилка при отриманні даних:', error.message);
-    if (cachedData) return { data: cachedData, fromCache: true, error: error.message };
+    if (cachedData) {
+      console.log('Використовуємо застарілі кешовані дані');
+      return { data: cachedData, fromCache: true, error: error.message };
+    }
+    console.log('Використовуємо fallback дані');
     return { data: fallbackData, fromCache: false, error: error.message };
   }
 }
@@ -156,6 +208,10 @@ app.get('/', (req, res) => {
       'POST /api/refresh-cache': 'Refresh data cache',
       'GET /api/status': 'Server status'
     },
+    cors: {
+      enabled: true,
+      allowedOrigins: corsOptions.origin
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -163,6 +219,8 @@ app.get('/', (req, res) => {
 // API маршрути
 app.get('/api/sheet-data', async (req, res) => {
   try {
+    console.log(`API запит від: ${req.headers.origin || 'невідомо'}`);
+    
     const result = await getCachedData();
     res.json({
       success: true,
@@ -171,35 +229,73 @@ app.get('/api/sheet-data', async (req, res) => {
         fromCache: result.fromCache,
         lastUpdate: lastFetchTime ? new Date(lastFetchTime).toISOString() : null,
         nextUpdate: lastFetchTime ? new Date(lastFetchTime + CACHE_DURATION).toISOString() : null,
+        cacheAge: lastFetchTime ? Date.now() - lastFetchTime : null,
         error: result.error || null,
         recordCount: result.data.length - 1,
         businessCount: result.data.length > 1 ? [...new Set(result.data.slice(1).map(row => row[0]))].length : 0
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message, data: fallbackData });
+    console.error('API помилка:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message, 
+      data: fallbackData,
+      meta: {
+        fromCache: false,
+        usingFallback: true
+      }
+    });
   }
 });
 
 app.post('/api/refresh-cache', async (req, res) => {
-  cachedData = null;
-  lastFetchTime = null;
-  const result = await getCachedData();
-  res.json({ success: true, data: result.data, meta: { fromCache: result.fromCache } });
+  try {
+    console.log('Примусове оновлення кешу...');
+    cachedData = null;
+    lastFetchTime = null;
+    const result = await getCachedData();
+    res.json({ 
+      success: true, 
+      data: result.data, 
+      meta: { 
+        fromCache: result.fromCache,
+        recordCount: result.data.length - 1,
+        refreshed: true 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 app.get('/api/status', (req, res) => {
+  const now = Date.now();
   res.json({
     status: 'running',
+    timestamp: new Date().toISOString(),
     cache: {
       hasData: !!cachedData,
       lastUpdate: lastFetchTime ? new Date(lastFetchTime).toISOString() : null,
+      cacheAge: lastFetchTime ? now - lastFetchTime : null,
+      cacheExpiry: lastFetchTime ? new Date(lastFetchTime + CACHE_DURATION).toISOString() : null,
       recordCount: cachedData ? cachedData.length - 1 : 0
     },
     config: {
       spreadsheetId: SPREADSHEET_ID,
-      businesses: Object.keys(SHEET_GIDS)
-    }
+      businesses: Object.keys(SHEET_GIDS),
+      cacheDuration: CACHE_DURATION
+    },
+    cors: corsOptions
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
 });
 
@@ -207,15 +303,29 @@ app.get('/api/status', (req, res) => {
 app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Route not found',
+    requestedPath: req.originalUrl,
+    method: req.method,
     availableRoutes: [
       'GET /',
       'GET /api/sheet-data',
       'POST /api/refresh-cache',
-      'GET /api/status'
+      'GET /api/status',
+      'GET /health'
     ]
   });
 });
 
-app.listen(PORT, () => {
+// Error handler
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: error.message 
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('CORS enabled for:', corsOptions.origin);
 });

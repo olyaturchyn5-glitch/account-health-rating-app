@@ -1,16 +1,45 @@
 const express = require('express');
 const cors = require('cors');
 const app = express();
-const PORT = 3002;
+
+// ВАЖЛИВО: PORT з environment variables для Render
+const PORT = process.env.PORT || 3002;
 
 // Кеш для даних
 let cachedData = null;
 let lastFetchTime = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 хвилин
 
+// CORS налаштування для production та development
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? [
+        'https://account-health-rating-app.vercel.app', // твій Vercel домен
+        'https://*.vercel.app', // будь-який Vercel домен
+      ]
+    : [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:3000'
+      ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Health check endpoint для Render
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Account Health Rating API is running!', 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Конфігурація Google Sheets
 const SPREADSHEET_ID = '1P5boeXBMpAaujGRrZZtXaokwRyqPU1abr422dcA1z1o';
@@ -104,8 +133,24 @@ async function getCachedData() {
         if (!gid) continue;
 
         const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
-        const response = await fetch(csvUrl);
-        if (!response.ok) continue;
+        
+        // Додаємо timeout для fetch запитів
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд timeout
+        
+        const response = await fetch(csvUrl, { 
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Node.js Server'
+          }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          console.log(`Помилка HTTP ${response.status} для ${businessName}`);
+          continue;
+        }
 
         const csvText = await response.text();
         const parsedData = parseCSV(csvText);
@@ -128,18 +173,29 @@ async function getCachedData() {
 
       } catch (sheetError) {
         console.error(`Помилка при обробці ${businessName}:`, sheetError.message);
+        if (sheetError.name === 'AbortError') {
+          console.error(`Timeout для ${businessName}`);
+        }
       }
     }
 
-    if (allData.length <= 1) throw new Error('Не вдалося отримати дані з жодного аркуша.');
+    if (allData.length <= 1) {
+      console.log('Не вдалося отримати дані, використовуємо fallback');
+      throw new Error('Не вдалося отримати дані з жодного аркуша.');
+    }
 
     cachedData = allData;
     lastFetchTime = now;
+    console.log(`Дані успішно оновлено. Записів: ${allData.length - 1}`);
     return { data: cachedData, fromCache: false };
 
   } catch (error) {
     console.error('Помилка при отриманні даних:', error.message);
-    if (cachedData) return { data: cachedData, fromCache: true, error: error.message };
+    if (cachedData) {
+      console.log('Повертаємо старі дані з кешу');
+      return { data: cachedData, fromCache: true, error: error.message };
+    }
+    console.log('Використовуємо резервні дані');
     return { data: fallbackData, fromCache: false, error: error.message };
   }
 }
@@ -147,6 +203,7 @@ async function getCachedData() {
 // API маршрути
 app.get('/api/sheet-data', async (req, res) => {
   try {
+    console.log('API запит на /api/sheet-data');
     const result = await getCachedData();
     res.json({
       success: true,
@@ -161,32 +218,87 @@ app.get('/api/sheet-data', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message, data: fallbackData });
+    console.error('Критична помилка в API:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message, 
+      data: fallbackData 
+    });
   }
 });
 
 app.post('/api/refresh-cache', async (req, res) => {
-  cachedData = null;
-  lastFetchTime = null;
-  const result = await getCachedData();
-  res.json({ success: true, data: result.data, meta: { fromCache: result.fromCache } });
+  try {
+    console.log('Примусове оновлення кешу');
+    cachedData = null;
+    lastFetchTime = null;
+    const result = await getCachedData();
+    res.json({ 
+      success: true, 
+      data: result.data, 
+      meta: { fromCache: result.fromCache } 
+    });
+  } catch (error) {
+    console.error('Помилка при оновленні кешу:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 });
 
 app.get('/api/status', (req, res) => {
   res.json({
     status: 'running',
+    environment: process.env.NODE_ENV || 'development',
+    uptime: process.uptime(),
     cache: {
       hasData: !!cachedData,
       lastUpdate: lastFetchTime ? new Date(lastFetchTime).toISOString() : null,
-      recordCount: cachedData ? cachedData.length - 1 : 0
+      recordCount: cachedData ? cachedData.length - 1 : 0,
+      nextUpdate: lastFetchTime ? new Date(lastFetchTime + CACHE_DURATION).toISOString() : null
     },
     config: {
       spreadsheetId: SPREADSHEET_ID,
-      businesses: Object.keys(SHEET_GIDS)
+      businesses: Object.keys(SHEET_GIDS),
+      port: PORT
     }
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Необроблена помилка:', error);
+  res.status(500).json({ 
+    success: false, 
+    error: 'Внутрішня помилка сервера' 
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    success: false, 
+    error: 'Ендпоінт не знайдено',
+    availableEndpoints: [
+      'GET /',
+      'GET /api/status',
+      'GET /api/sheet-data',
+      'POST /api/refresh-cache'
+    ]
+  });
+});
+
+// ВАЖЛИВО: Слухати на 0.0.0.0 для Render
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Health check: http://localhost:${PORT}/`);
+  
+  // Preload cache on startup
+  getCachedData().then(() => {
+    console.log('✅ Початковий кеш завантажено');
+  }).catch(err => {
+    console.log('⚠️ Не вдалося завантажити початковий кеш:', err.message);
+  });
 });

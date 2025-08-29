@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Конфігурація API
-const API_BASE_URL = process.env.REACT_APP_BACKEND_URL|| 'http://localhost:3002';
+// Конфігурація API - ВИПРАВЛЕНО з підтримкою .env
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://account-health-rating-app.onrender.com';
 
 console.log('API_BASE_URL:', API_BASE_URL); // Для відладки
+console.log('NODE_ENV:', process.env.NODE_ENV); // Для відладки
 
 // Резервні дані з усіма бізнесами
 const mockData = [

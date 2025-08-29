@@ -10,26 +10,46 @@ let cachedData = null;
 let lastFetchTime = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 хвилин
 
-// CORS налаштування для production та development
+// ВИПРАВЛЕНИЙ CORS - динамічна перевірка origin
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? [
-        'https://account-health-rating-app.vercel.app', // твій Vercel домен
-        'https://*.vercel.app', // будь-який Vercel домен
-      ]
-    : [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://127.0.0.1:3000'
-      ],
+  origin: function (origin, callback) {
+    // Дозволити запити без origin (мобільні додатки, Postman, тести)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      // Development origins
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:5173', // Vite
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173',
+      // Production origins
+      'https://account-health-rating-app.vercel.app'
+    ];
+    
+    // Перевіряємо точний збіг або паттерн *.vercel.app
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      console.log(`CORS заблокував origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200 // Для підтримки старих браузерів
 };
 
 // Middleware
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Додаткові заголовки безпеки
+app.use((req, res, next) => {
+  res.header('X-Powered-By', 'Account Health API');
+  next();
+});
 
 // Health check endpoint для Render
 app.get('/', (req, res) => {
@@ -37,7 +57,8 @@ app.get('/', (req, res) => {
     message: 'Account Health Rating API is running!', 
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    cors: 'enabled'
   });
 });
 
@@ -203,7 +224,7 @@ async function getCachedData() {
 // API маршрути
 app.get('/api/sheet-data', async (req, res) => {
   try {
-    console.log('API запит на /api/sheet-data');
+    console.log(`API запит на /api/sheet-data від origin: ${req.get('origin') || 'без origin'}`);
     const result = await getCachedData();
     res.json({
       success: true,
@@ -266,6 +287,15 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({
+    message: 'CORS працює!',
+    origin: req.get('origin'),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Необроблена помилка:', error);
@@ -284,6 +314,7 @@ app.use('*', (req, res) => {
       'GET /',
       'GET /api/status',
       'GET /api/sheet-data',
+      'GET /api/cors-test',
       'POST /api/refresh-cache'
     ]
   });
@@ -294,6 +325,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Backend running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Health check: http://localhost:${PORT}/`);
+  console.log(`CORS enabled for Vercel domains`);
   
   // Preload cache on startup
   getCachedData().then(() => {
